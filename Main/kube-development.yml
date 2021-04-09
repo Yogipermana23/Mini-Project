@@ -1,0 +1,59 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: BRI360-Summary
+  namespace: ingress-summary-360
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: BRI360-Summary
+    metadata:
+      labels:
+        app: BRI360-Summary
+      containers:
+      - name: BRI360-Summary
+        image: "172.18.136.12:8000/BRI360-Summary:{{TAG}}"
+        env:
+        - name: pqs_url
+          value: "http://172.18.98.50:8765"
+        - name: apm_server
+          value: "http://172.18.136.12:"8200
+        ports:
+        - name: api
+          containerPort: 8240
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: BRI360-Summary
+  namespace: ingress-summary-360
+spec:
+  type: NodePort
+  ports:
+  - port: 15102
+    targetPort: 8240
+    nodePort: 31002 # port exposed to external service by kubernetes
+  selector:
+    app:BRI360-Summary
+
+---
+
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: BRI360-Summary
+  namespace: ingress-summary-360
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  rules:
+  - http:
+    paths:
+    - path: /summary-360
+      backend:
+        serviceName: BRI360-Summary
+        servicePort: 15102

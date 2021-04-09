@@ -1,0 +1,10 @@
+version: "3"
+services:
+  etl:
+    image: "${DOCKER_REGISTRY_URL}/${PROJECT_NAME}:${TAG}"
+    environment:
+      - pqs_url=http://172.18.98.50:8765
+    deploy:
+      replicas: 1
+    ports:
+      - "8240:8240"

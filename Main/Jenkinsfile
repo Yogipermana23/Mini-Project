@@ -1,0 +1,85 @@
+pipeline {
+  agent any
+  environment {
+    TAG = "${env.GIT_COMMIT.take(8)}"
+    PROJECT_NAME = 'BRI360-Summary'
+  }
+  stages {
+    stage('Build Development') {
+      environment {
+        DOCKER_HOST = 'tcp://172.18.136.12:2375'
+        DOCKER_REGISTRY_URL = '172.18.136.12:8000'
+        DOCKER_REGISTRY_CREDS = credentials('docker-registry-dev')
+        PROXY='http://172.18.104.20:1707'
+      }
+      when {
+        branch 'sv-branch'
+      }
+      steps {
+        sh 'docker build -t ${DOCKER_REGISTRY_URL}/${PROJECT_NAME}:${TAG} --build-arg HTTP_PROXY=${PROXY} --build-arg HTTPS_PROXY=${PROXY} .'
+        sh 'docker login ${DOCKER_REGISTRY_URL} -u ${DOCKER_REGISTRY_CREDS_USR} -p ${DOCKER_REGISTRY_CREDS_PSW}'
+        sh 'docker push ${DOCKER_REGISTRY_URL}/${PROJECT_NAME}:${TAG}'
+      }
+    }
+    stage('Deploy Development') {
+      environment {
+        DOCKER_REGISTRY_URL = '172.18.136.12:8000'
+        DOCKER_REGISTRY_CREDS = credentials('docker-registry-dev')
+        DOCKER_HOST = 'tcp://172.18.136.12:2375'
+        APP_NAME = 'development'
+        NAMESPACE = 'Summary-360'
+      }
+      when {
+        branch 'sv-branch'
+      }
+      steps {
+        withCredentials([file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')]) {
+          sh 'mkdir -p ~/.kube'
+          sh 'cat $KUBECONFIG > ~/.kube/config'
+          // sh 'cat kube-development.yml | sed "s/{{TAG}}/$TAG/g" | kubectl apply -f -'
+
+          //deploy to k8s cluster
+            sh 'helm upgrade --install ${APP_NAME} ./helm/BRI360-Summary --set image.repository=${DOCKER_REGISTRY_URL}/${PROJECT_NAME},image.tag=${TAG} --namespace ${NAMESPACE}'
+        }
+      }
+    }
+    stage('Build Master') {
+      environment {
+        PROXY = 'http://172.18.104.20:1707'
+        DOCKER_HOST = 'tcp://192.168.3.8:2375'
+        DOCKER_REGISTRY_URL = 'docker.registry.bigdata.bri.co.id:30827'
+      }
+      when {
+        branch 'master'
+      }
+      steps {
+        withCredentials([usernamePassword(credentialsId: '7f16c07a-1747-42cc-99c2-d63e789d4041', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+          sh 'docker build -t ${DOCKER_REGISTRY_URL}/${PROJECT_NAME}:${TAG} --build-arg HTTP_PROXY=${PROXY} --build-arg HTTPS_PROXY=${PROXY} .'
+          sh 'docker login ${DOCKER_REGISTRY_URL} -u ${DOCKER_USER} -p ${DOCKER_PASS}'
+          sh 'docker push ${DOCKER_REGISTRY_URL}/${PROJECT_NAME}:${TAG}'
+          // sh 'docker rmi ${DOCKER_REGISTRY_URL}/${PROJECT_NAME}:${TAG}'
+        }
+      }
+    }
+    stage('Deploy Master') {
+      environment {
+        DOCKER_HOST = 'tcp://192.168.3.8:2375'
+        DOCKER_REGISTRY_URL = 'docker.registry.bigdata.bri.co.id:30827'
+        APP_NAME = 'prd-BRI360-Summary'
+        NAMESPACE = 'summary-360'
+      }
+      when {
+        branch 'master'
+      }
+      steps {
+        withCredentials([file(credentialsId: '4d833757-a80f-44cf-abe5-433a17e8f76f', variable: 'KUBECONFIG')]) {
+          sh 'mkdir -p ~/.kube'
+          sh 'cat $KUBECONFIG > ~/.kube/config'
+          // sh 'cat production.yml | sed "s/{{TAG}}/$TAG/g" | kubectl apply -f -'
+          // deploy to k8s cluster
+             sh 'helm upgrade --install ${APP_NAME} ./helm/cBRI360-Summary --set image.repository=${DOCKER_REGISTRY_URL}/${PROJECT_NAME},image.tag=${TAG} --namespace ${NAMESPACE}'
+        }      
+      }
+    }
+  }
+}
